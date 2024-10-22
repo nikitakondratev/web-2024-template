@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import useLocalStorageState from "use-local-storage-state";
 import styled from "styled-components";
 import {
   Typography,
@@ -19,6 +18,8 @@ import {
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import RestaurantIcon from "@mui/icons-material/Restaurant";
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import { db } from "./firebaseConfig";
 
 interface Ingredient {
   name: string;
@@ -27,7 +28,7 @@ interface Ingredient {
 }
 
 interface Recipe {
-  id: number;
+  id: string;
   name: string;
   ingredients: Ingredient[];
   instructions: string;
@@ -88,112 +89,50 @@ const StyledTextField = styled(TextField)`
 `;
 
 function App() {
-  const [recipes, setRecipes] = useLocalStorageState<Recipe[]>("recipes", {
-    defaultValue: [],
-  });
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [newRecipeName, setNewRecipeName] = useState("");
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [servingsMultiplier, setServingsMultiplier] = useState(1);
 
   useEffect(() => {
-    if (recipes.length === 0) {
-      const boilerplateRecipes: Recipe[] = [
-        {
-          id: 1,
-          name: "Спагетти Карбонара",
-          ingredients: [
-            { name: "Спагетти", amount: 400, unit: "г" },
-            { name: "Бекон", amount: 200, unit: "г" },
-            { name: "Яйца", amount: 4, unit: "шт" },
-            { name: "Пармезан", amount: 100, unit: "г" },
-          ],
-          instructions: "1. Отварить спагетти. 2. Обжарить бекон. 3. Смешать яйца и сыр. 4. Соединить все ингредиенты.",
-          servings: 4,
-        },
-        {
-          id: 2,
-          name: "Греческий салат",
-          ingredients: [
-            { name: "Помидоры", amount: 400, unit: "г" },
-            { name: "Огурцы", amount: 200, unit: "г" },
-            { name: "Красный лук", amount: 100, unit: "г" },
-            { name: "Фета", amount: 200, unit: "г" },
-            { name: "Оливки", amount: 100, unit: "г" },
-          ],
-          instructions: "1. Нарезать овощи. 2. Добавить фету и оливки. 3. Заправить оливковым маслом и лимонным соком.",
-          servings: 4,
-        },
-        {
-          id: 3,
-          name: "Борщ",
-          ingredients: [
-            { name: "Говядина", amount: 500, unit: "г" },
-            { name: "Свекла", amount: 300, unit: "г" },
-            { name: "Капуста", amount: 200, unit: "г" },
-            { name: "Картофель", amount: 300, unit: "г" },
-            { name: "Морковь", amount: 100, unit: "г" },
-          ],
-          instructions: "1. Сварить бульон. 2. Добавить овощи. 3. Варить до готовности. 4. Подавать со сметаной.",
-          servings: 6,
-        },
-        {
-          id: 4,
-          name: "Суши роллы",
-          ingredients: [
-            { name: "Рис", amount: 300, unit: "г" },
-            { name: "Нори", amount: 4, unit: "листа" },
-            { name: "Лосось", amount: 200, unit: "г" },
-            { name: "Огурец", amount: 100, unit: "г" },
-            { name: "Авокадо", amount: 1, unit: "шт" },
-          ],
-          instructions: "1. Приготовить рис. 2. Нарезать ингредиенты. 3. Сформировать роллы. 4. Нарезать и подавать с соевым соусом.",
-          servings: 2,
-        },
-        {
-          id: 5,
-          name: "Тирамису",
-          ingredients: [
-            { name: "Маскарпоне", amount: 500, unit: "г" },
-            { name: "Яйца", amount: 4, unit: "шт" },
-            { name: "Савоярди", amount: 200, unit: "г" },
-            { name: "Кофе", amount: 200, unit: "мл" },
-            { name: "Какао", amount: 50, unit: "г" },
-          ],
-          instructions: "1. Взбить яйца с сахаром. 2. Добавить маскарпоне. 3. Пропитать савоярди кофе. 4. Выложить слоями. 5. Посыпать какао.",
-          servings: 8,
-        },
-      ];
-      setRecipes(boilerplateRecipes);
-    }
-  }, [recipes, setRecipes]);
+    const fetchRecipes = async () => {
+      const recipesCollection = collection(db, "recipes");
+      const recipesSnapshot = await getDocs(recipesCollection);
+      const recipesList = recipesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Recipe));
+      setRecipes(recipesList);
+    };
 
-  const handleAddRecipe = () => {
+    fetchRecipes();
+  }, []);
+
+  const handleAddRecipe = async () => {
     if (newRecipeName.trim() !== "") {
-      const newRecipe: Recipe = {
-        id: Date.now(),
+      const newRecipe: Omit<Recipe, "id"> = {
         name: newRecipeName.trim(),
         ingredients: [],
         instructions: "",
         servings: 1,
       };
-      setRecipes([...recipes, newRecipe]);
+      const docRef = await addDoc(collection(db, "recipes"), newRecipe);
+      setRecipes([...recipes, { id: docRef.id, ...newRecipe }]);
       setNewRecipeName("");
     }
   };
 
-  const handleDeleteRecipe = (id: number) => {
+  const handleDeleteRecipe = async (id: string) => {
+    await deleteDoc(doc(db, "recipes", id));
     setRecipes(recipes.filter((recipe) => recipe.id !== id));
   };
 
   const handleEditRecipe = (recipe: Recipe) => {
     setEditingRecipe(recipe);
     setIsDialogOpen(true);
-    setServingsMultiplier(1);
   };
 
-  const handleUpdateRecipe = () => {
+  const handleUpdateRecipe = async () => {
     if (editingRecipe) {
+      const { id, ...recipeData } = editingRecipe;
+      await updateDoc(doc(db, "recipes", id), recipeData);
       setRecipes(
         recipes.map((recipe) =>
           recipe.id === editingRecipe.id ? editingRecipe : recipe
@@ -204,10 +143,9 @@ function App() {
     setEditingRecipe(null);
   };
 
-  const handleServingsChange = (event: Event, newValue: number | number[]) => {
+  const handleServingsChange = (_: Event, newValue: number | number[]) => {
     if (typeof newValue === 'number' && editingRecipe) {
       const multiplier = newValue / editingRecipe.servings;
-      setServingsMultiplier(multiplier);
       setEditingRecipe({
         ...editingRecipe,
         ingredients: editingRecipe.ingredients.map(ingredient => ({
